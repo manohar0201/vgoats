@@ -10,6 +10,17 @@ export function normalizeBreed(breed: string): string {
   return breed.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+export function formatBreedLabel(breed: string): string {
+  const norm = normalizeBreed(breed);
+  if (!norm || norm === "unknown") {
+    return breed;
+  }
+  return norm
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export interface PricingLookupResult {
   input: RawPricingInput;
   evidence: SourceEvidence;

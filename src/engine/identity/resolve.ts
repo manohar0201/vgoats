@@ -36,6 +36,7 @@ interface MergeAttempt {
   evidence: ReturnType<typeof sourceEvidence>[];
 }
 
+/** All RFID tags for a GoatOS row: current, prior, and retag alias equivalents. */
 function collectGoatTags(animal: RawGoatOSAnimal, aliases: TagAliasGroups): string[] {
   const raw = [animal.rfid_tag, ...animal.prior_tags].filter(Boolean);
   const seen = new Set<string>();
@@ -46,6 +47,7 @@ function collectGoatTags(animal: RawGoatOSAnimal, aliases: TagAliasGroups): stri
   return [...seen];
 }
 
+/** Index GoatOS animals by every tag they carry (including alias groups). */
 function goatosByTag(
   animals: RawGoatOSAnimal[],
   aliases: TagAliasGroups,
@@ -63,6 +65,7 @@ function goatosByTag(
   return index;
 }
 
+/** Find GoatOS rows matching a tag directly or via retag alias. */
 function tagLookup(
   tag: string,
   index: Map<string, RawGoatOSAnimal[]>,
@@ -78,6 +81,7 @@ function tagLookup(
   return [...merged.values()];
 }
 
+/** Link legacy CPT to GoatOS when RFID matches exactly one row; else record ambiguity. */
 function tryTagMerge(
   legacy: RawLegacyCptAnimal,
   tagIndex: Map<string, RawGoatOSAnimal[]>,
@@ -125,6 +129,7 @@ function tryTagMerge(
   }
 }
 
+/** Pick canonical id: prefer GoatOS animal_id, else legacy CPT id. */
 function chooseCanonicalId(
   goatosRecords: RawGoatOSAnimal[],
   legacyRecords: RawLegacyCptAnimal[],
@@ -141,6 +146,7 @@ function chooseCanonicalId(
   return goatosRecords[0]!.animal_id;
 }
 
+/** Score identity confidence: high when GoatOS-backed or tag-linked; medium legacy-only. */
 function assessConfidence(
   goatosRecords: RawGoatOSAnimal[],
   legacyRecords: RawLegacyCptAnimal[],
@@ -158,6 +164,7 @@ function assessConfidence(
   return "low";
 }
 
+/** Assemble one CanonicalAnimal from a union-find cluster of GoatOS + legacy nodes. */
 function buildCanonicalAnimal(
   nodeIds: string[],
   goatosById: Map<string, RawGoatOSAnimal>,
@@ -224,6 +231,7 @@ function buildCanonicalAnimal(
   };
 }
 
+/** Full identity pass: union-find merge by unique RFID tag, build registry (~200 goats). */
 export function resolveIdentitiesFromContext(ctx: EngineContext): IdentityResolutionResult {
   const { animals, legacyCpt, fieldReports } = ctx.data;
   const aliases = buildTagAliasGroups(fieldReports);
@@ -277,7 +285,7 @@ export function resolveIdentitiesFromContext(ctx: EngineContext): IdentityResolu
 
 let cachedResult: IdentityResolutionResult | undefined;
 
-/** Resolve identities and return the canonical registry (cached per process). */
+/** Public entry: resolve identities; caches result for the process lifetime. */
 export function resolveIdentities(ctx?: EngineContext): IdentityResolutionResult {
   if (!ctx && cachedResult) {
     return cachedResult;
@@ -290,6 +298,7 @@ export function resolveIdentities(ctx?: EngineContext): IdentityResolutionResult
   return result;
 }
 
+/** Clear cached identity result (for tests or data reload). */
 export function resetIdentityCache(): void {
   cachedResult = undefined;
 }
