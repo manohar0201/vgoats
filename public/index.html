@@ -83,8 +83,46 @@
     const detail = document.getElementById('detail');
 
     const inventoryState = { breed: '', priceMin: '', priceMax: '', page: 1, limit: 15 };
-    const discrepancyState = { severity: '' };
+    const discrepancyState = { severity: '', page: 1, limit: 15 };
     const discrepancyData = { rows: [], offers: null, feed: null };
+    const bookingsState = { page: 1, limit: 15 };
+    const bookingsData = { rows: [] };
+
+    function paginateRows(rows, page, limit) {
+      const total = rows.length;
+      const totalPages = Math.max(1, Math.ceil(total / limit) || 1);
+      const safePage = Math.max(1, Math.min(page, totalPages));
+      const start = (safePage - 1) * limit;
+      return {
+        items: rows.slice(start, start + limit),
+        total,
+        page: safePage,
+        limit,
+        totalPages,
+        rangeStart: total === 0 ? 0 : start + 1,
+        rangeEnd: Math.min(safePage * limit, total),
+      };
+    }
+
+    function pagerHtml(prefix, pageInfo) {
+      const { page, totalPages, rangeStart, rangeEnd, total } = pageInfo;
+      return `<div class="inv-pager">
+          <span>Showing ${rangeStart}–${rangeEnd} of ${total} · page ${page} / ${totalPages}</span>
+          <span>
+            <button type="button" id="${prefix}_prev" ${page <= 1 ? 'disabled' : ''}>Previous</button>
+            <button type="button" id="${prefix}_next" ${page >= totalPages ? 'disabled' : ''}>Next</button>
+          </span>
+        </div>`;
+    }
+
+    function bindPager(prefix, pageInfo, onPageChange) {
+      document.getElementById(`${prefix}_prev`).onclick = () => {
+        if (pageInfo.page > 1) onPageChange(pageInfo.page - 1);
+      };
+      document.getElementById(`${prefix}_next`).onclick = () => {
+        if (pageInfo.page < pageInfo.totalPages) onPageChange(pageInfo.page + 1);
+      };
+    }
 
     async function clock() {
       try { const c = await (await fetch('/api/config')).json();
@@ -148,7 +186,10 @@
 
     function renderDiscrepanciesView() {
       const allRows = discrepancyData.rows;
-      const rows = filterDiscrepancies(allRows);
+      const filtered = filterDiscrepancies(allRows);
+      const pageInfo = paginateRows(filtered, discrepancyState.page, discrepancyState.limit);
+      discrepancyState.page = pageInfo.page;
+      const rows = pageInfo.items;
       const severities = [...new Set(allRows.map((r) => r.severity).filter(Boolean))]
         .sort((a, b) => SEVERITY_RANK[a] - SEVERITY_RANK[b]);
       const severityOptions = ['<option value="">All severities</option>'].concat(
@@ -170,21 +211,30 @@
           </label>
           <button type="submit" class="primary">Apply</button>
           <button type="button" id="disc_reset">Reset</button>
-          <span style="font-size:12px;color:var(--mut);align-self:center">${rows.length} of ${allRows.length} issues</span>
+          <span style="font-size:12px;color:var(--mut);align-self:center">${filtered.length} of ${allRows.length} issues</span>
         </form>
-        ${rows.length === 0
+        ${filtered.length === 0
           ? '<div class="empty">No issues match this severity.</div>'
-          : `<table><thead><tr><th>Severity</th><th>What</th><th>Customer</th><th>Explanation</th></tr></thead><tbody>${tableRows}</tbody></table>`}`;
+          : `<table><thead><tr><th>Severity</th><th>What</th><th>Customer</th><th>Explanation</th></tr></thead><tbody>${tableRows}</tbody></table>
+             ${pagerHtml('disc', pageInfo)}`}`;
 
       document.getElementById('disc-filters').onsubmit = (ev) => {
         ev.preventDefault();
         discrepancyState.severity = document.getElementById('disc_severity').value;
+        discrepancyState.page = 1;
         renderDiscrepanciesView();
       };
       document.getElementById('disc_reset').onclick = () => {
         discrepancyState.severity = '';
+        discrepancyState.page = 1;
         renderDiscrepanciesView();
       };
+      if (filtered.length > 0) {
+        bindPager('disc', pageInfo, (p) => {
+          discrepancyState.page = p;
+          renderDiscrepanciesView();
+        });
+      }
 
       if (rows.length > 0) {
         bindReplacementButtons(view);
@@ -277,7 +327,7 @@
       if (v === null || v === undefined) return '';
       return typeof v === 'object' ? JSON.stringify(v) : String(v);
     }
-    function statusPill(status) {
+    function eligibilityStatusPill(status) {
       const cls = status === 'eligible' ? 'ok' : status === 'ineligible' ? 'crit' : 'high';
       return `<span class="pill ${cls}">${esc(status)}</span>`;
     }
@@ -377,7 +427,7 @@
     function renderEligibility(elig) {
       if (!elig) return '<p class="subline">No eligibility verdict.</p>';
       return `<div class="detail-block">
-        <div class="head">${statusPill(elig.status)} <span class="subline">for delivery ${esc(elig.asOfDate)}</span></div>
+        <div class="head">${eligibilityStatusPill(elig.status)} <span class="subline">for delivery ${esc(elig.asOfDate)}</span></div>
         <ul class="reasons">${(elig.reasons||[]).map(r=>`<li>${esc(r)}</li>`).join('')}</ul>
         <div class="lbl">Why we trust this</div>
         ${renderEvidence(elig.evidence)}
@@ -478,7 +528,8 @@
 
       const rows = items.map(a => `<tr data-id="${a.canonicalId??''}"><td><code>${a.canonicalId??''}</code></td><td>${esc(a.breed??'')}</td>
             <td>${esc(a.eligibility?.status??'')} ${a.eligibility?.reasons?.length?('· '+esc(a.eligibility.reasons.join('; '))):''}</td>
-            <td>${a.price?.amountInr??'—'}</td><td>${esc(a.identityConfidence??'')}</td></tr>`).join('');
+            <td>${a.price?.trustedWeightKg ?? '—'}</td>
+            <td>${a.price?.amountInr??'—'}</td><!-- <td>${esc(a.identityConfidence??'')}</td> --></tr>`).join('');
 
       view.innerHTML = `
         <form class="inv-toolbar" id="inv-filters">
@@ -496,7 +547,7 @@
         </form>
         ${items.length === 0
           ? '<div class="empty">No goats match these filters.</div>'
-          : `<table><thead><tr><th>Goat</th><th>Breed</th><th>Eligibility</th><th>Price (₹)</th><th>Identity</th></tr></thead><tbody>${rows}</tbody></table>`}
+          : `<table><thead><tr><th>Goat</th><th>Breed</th><th>Eligibility</th><th>Weight (kg)</th><th>Price (₹)</th><!-- <th>Identity</th> --></tr></thead><tbody>${rows}</tbody></table>`}
         <div class="inv-pager">
           <span>Showing ${start}–${end} of ${total} · page ${page} / ${totalPages}</span>
           <span>
@@ -529,10 +580,56 @@
       view.querySelectorAll('tbody tr').forEach(tr => tr.onclick = () => showDetail(tr.dataset.id, tr));
     }
 
-    function statusPill(status) {
+    function bookingStatusPill(status) {
       const s = (status || '').toLowerCase();
       const cls = s === 'confirmed' ? 'ok' : (s === 'cancelled' || s === 'void') ? 'crit' : 'high';
       return `<span class="pill ${cls}">${esc(status || '—')}</span>`;
+    }
+
+    function renderBookingsView() {
+      const allRows = bookingsData.rows;
+      const pageInfo = paginateRows(allRows, bookingsState.page, bookingsState.limit);
+      bookingsState.page = pageInfo.page;
+      const rows = pageInfo.items;
+
+      if (allRows.length === 0) {
+        view.innerHTML = '<div class="empty">No bookings.</div>';
+        return;
+      }
+
+      const tableRows = rows.map((b) => {
+        const goat = b.assignedCanonicalId
+          ? `<code>${esc(b.assignedCanonicalId)}</code>${b.hasSubstitute ? ' <span class="pill high">substitute</span>' : ''}`
+          : `<span style="color:var(--mut)">unresolved</span>`;
+        const gapCell = b.weightGapKg != null
+          ? `<span class="pill high">${esc(b.weightGapKg)} kg short</span>`
+          : (b.trustedWeightKg != null ? `${esc(b.trustedWeightKg)} kg` : '—');
+        return `<tr>
+            <td><code>${esc(b.bookingId)}</code><br><span style="color:var(--mut);font-size:11px">${esc(b.source)}</span></td>
+            <td>${esc(b.customerName)}<br><span style="color:var(--mut);font-size:11px">${esc(b.customerPhone)}</span></td>
+            <td><code>${esc(b.animalRef)}</code></td>
+            <td>${goat}</td>
+            <td>${esc(b.bookedOn)}</td>
+            <td>${b.promisedWeightKg ?? '—'}</td>
+            <td>${gapCell}</td>
+            <td>${b.priceQuotedInr ?? '—'}</td>
+            <td>${bookingStatusPill(b.status)}</td>
+            <td>${b.notes ? esc(b.notes) : '—'}</td>
+          </tr>`;
+      }).join('');
+
+      view.innerHTML = `
+        <p class="hint" style="margin-top:0">${allRows.length} festival bookings · sheet + demo session</p>
+        <table><thead><tr>
+          <th>Booking</th><th>Customer</th><th>Animal ref</th><th>Assigned goat</th>
+          <th>Booked on</th><th>Promised kg</th><th>Trusted / gap</th><th>Price (₹)</th><th>Status</th><th>Notes</th>
+        </tr></thead><tbody>${tableRows}</tbody></table>
+        ${pagerHtml('book', pageInfo)}`;
+
+      bindPager('book', pageInfo, (p) => {
+        bookingsState.page = p;
+        renderBookingsView();
+      });
     }
 
     async function loadBookingsTab() {
@@ -543,32 +640,8 @@
           view.innerHTML = `<div class="empty">Failed to load:<br><code>${esc(data.error||res.status)}</code></div>`;
           return;
         }
-        if (!Array.isArray(data) || data.length === 0) {
-          view.innerHTML = '<div class="empty">No bookings.</div>';
-          return;
-        }
-        const rows = data.map((b) => {
-          const goat = b.assignedCanonicalId
-            ? `<code>${esc(b.assignedCanonicalId)}</code>${b.hasSubstitute ? ' <span class="pill high">substitute</span>' : ''}`
-            : `<span style="color:var(--mut)">unresolved</span>`;
-          return `<tr>
-            <td><code>${esc(b.bookingId)}</code><br><span style="color:var(--mut);font-size:11px">${esc(b.source)}</span></td>
-            <td>${esc(b.customerName)}<br><span style="color:var(--mut);font-size:11px">${esc(b.customerPhone)}</span></td>
-            <td><code>${esc(b.animalRef)}</code></td>
-            <td>${goat}</td>
-            <td>${esc(b.bookedOn)}</td>
-            <td>${b.promisedWeightKg ?? '—'}</td>
-            <td>${b.priceQuotedInr ?? '—'}</td>
-            <td>${statusPill(b.status)}</td>
-            <td>${b.notes ? esc(b.notes) : '—'}</td>
-          </tr>`;
-        }).join('');
-        view.innerHTML = `
-          <p class="hint" style="margin-top:0">${data.length} festival bookings · sheet + demo session</p>
-          <table><thead><tr>
-            <th>Booking</th><th>Customer</th><th>Animal ref</th><th>Assigned goat</th>
-            <th>Booked on</th><th>Promised kg</th><th>Price (₹)</th><th>Status</th><th>Notes</th>
-          </tr></thead><tbody>${rows}</tbody></table>`;
+        bookingsData.rows = Array.isArray(data) ? data : [];
+        renderBookingsView();
       } catch (e) {
         view.innerHTML = `<div class="empty">request failed: ${e}</div>`;
       }

@@ -2,6 +2,7 @@
  * Shared checks for whether a goat may be promised (excluding assignment state).
  */
 import { computeEligibilityForAnimal } from "../eligibility/compute.js";
+import { feedExposureSaleBlockReason } from "../feed/traceExposure.js";
 import { priceAnimalForAnimal } from "../pricing/price.js";
 import type { CanonicalRegistry } from "../registry.js";
 import type { CanonicalAnimal, EngineContext, IdentityConfidence } from "../types.js";
@@ -36,6 +37,11 @@ export function saleEligibilityBlockReason(
   const eligibility = computeEligibilityForAnimal(canonicalAnimalId, ctx, registry);
   if (eligibility.status !== "eligible") {
     return eligibility.reasons.join("; ");
+  }
+
+  const feedBlock = feedExposureSaleBlockReason(canonicalAnimalId, ctx);
+  if (feedBlock) {
+    return feedBlock;
   }
 
   let price;

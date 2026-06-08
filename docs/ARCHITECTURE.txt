@@ -111,15 +111,21 @@ INVENTORY (what's safe to show now)
 
 Module: src/engine/inventory/
 
+listAvailable.ts — full eligible pool. queryInventory.ts — breed/price filters + pagination
+for GET /api/inventory (default limit 15).
+
 A goat appears in listAvailableAnimals() only if ALL:
   - identity confidence >= high (per festival rules)
   - eligibility.status === eligible (delivery day)
+  - NOT feed-exposed-uncleared (traceFeedExposure + no contamination_cleared before delivery)
   - trusted price computable
   - trusted weight >= minWeightKg
   - NOT already assigned (sheet confirmed booking OR runtime booking OR substitute lock)
 
-Currently ~132 of 200 canonical goats pass. The rest are blocked, ineligible, already
-promised, or low identity confidence.
+saleEligibilityBlockReason() in bookable.ts is the shared gate for inventory and bookAnimal.
+
+Currently ~119 of 200 canonical goats pass. The rest are blocked, ineligible, feed-hold,
+already promised, or low identity confidence.
 
 
 BOOKING + CONCURRENCY
@@ -132,6 +138,10 @@ Those ids are treated as already spoken for (unless reassigned — see replaceme
 
 store.ts — in-memory Map<canonicalId, booking> + per-goat promise chain lock.
 book.ts — withGoatLock → check assigned → check saleEligibilityBlockReason → commit.
+Runtime bookings snapshot trusted weight + price at book time.
+
+listBookings.ts — sheet rows + runtime BK-RUN-xxxx for GET /api/bookings (includes
+trustedWeightKg and weightGapKg when computable).
 
 Refusal returns { ok: false, reason: "..." } with HTTP 409 from API.
 
@@ -148,10 +158,15 @@ Module: src/engine/reconcile/
 Reads sheet + exchange_listings + field_reports. Emits Discrepancy[] sorted by severity
 then issueId.
 
-What it catches today (36 issues from sheet/listings/deaths):
+weightShortfall.ts — promised_weight vs trusted weight today for confirmed assignments.
+Gap < 2 kg ignored; 2–5 kg medium (DIS-BOOK-WGT-*); > 5 kg high. Skips bookings already
+reassigned to a substitute.
+
+What it catches today (40 from reconcileBookings; feed adds 6 more in UI):
   - double booking same goat (7) — critical
   - confirmed booking on delivery-ineligible goat (7) — critical
   - field report death but GoatOS still active, customer booked (2) — critical
+  - promised weight shortfall vs trusted weight (4 at current thresholds) — high/medium
   - booking ref unresolved (10) — high/medium
   - ambiguous ref matches multiple goats (1) — high
   - active listing for already-booked or ineligible goat (9) — high/medium
@@ -175,9 +190,10 @@ health_ledger contamination_cleared before deliveryDate.
 Outputs:
   - exposures[] per goat (events, clearance, affected bookings)
   - discrepancies[] for exposed + not cleared + confirmed booking
+  - feedExposureSaleBlockReason() — same exposure/clearance logic blocks inventory/booking
+    for exposed-uncleared goats (cached lookup built from trace)
 
-Does not auto-remove goats from inventory; flags risk for ops and links evidence
-(feed_log_id, movement_event_id, health_event_id).
+Evidence cites feed_log_id, movement_event_id, health_event_id.
 
 
 REPLACEMENT / REMEDIATION
@@ -229,7 +245,9 @@ API SURFACE
 -----------
 
 GET  /api/config
-GET  /api/inventory                    → AvailableAnimal[]
+GET  /api/inventory                    → { items, total, page, limit, breeds }
+                                       query: breed, priceMin, priceMax, page, limit (default 15)
+GET  /api/bookings                     → BookingListItem[] (sheet + runtime session bookings)
 GET  /api/discrepancies                → Discrepancy[] (reconcile only; fast)
 GET  /api/discrepancies/replacement-offers → Record<issueId, ReplacementOffer>
 GET  /api/feed-exposure                → { contaminatedBatches, exposures, discrepancies }
@@ -240,8 +258,11 @@ POST /api/replacements                 → { issueId } → apply substitute
 
 npm run dev serves UI + API on :4000
 
-UI tabs: Available goats | Offering discrepancies (loads reconcile + offers + feed in parallel,
-merges feed discrepancies into severity-sorted table, feed detail panel below).
+UI tabs: Available goats | Bookings | Offering discrepancies.
+Inventory: breed/price filters + 15-row pagination (server-side).
+Bookings + discrepancies: 15-row pagination (client-side); discrepancies also have severity
+filter. Discrepancies tab loads reconcile + offers + feed in parallel, merges feed
+discrepancies into severity-sorted table, feed detail panel below.
 
 
 NOT IMPLEMENTED
@@ -251,7 +272,7 @@ ingestFieldReports() — still throws in engine/index.ts. Death signals from fie
 are partially handled in reconcile/fieldDeaths.ts (regex). General unstructured ingestion
 deferred.
 
-See TRIAGE_NOTE.txt for promised-weight risk, price audit, persistence.
+See TRIAGE_NOTE.txt for price audit, persistence, growth projection on shortfalls.
 
 
 EXTENSIBILITY
@@ -264,7 +285,8 @@ New farm/source: add loader + node type in identity resolver, don't fork eligibi
 
 New signal: add a module that returns verdict/discrepancy with SourceEvidence[], wire into
 eligibility (blocks sale), reconcile (flags promised goats), or inventory as appropriate.
-Feed exposure is reconcile-style risk on existing promises, not a sale gate today.
+Feed exposure blocks new promises (inventory + book) when exposed and not cleared; reconcile
+still flags existing confirmed bookings on the same goats.
 
 Config already separates clock, rules, and pricing inputs — engine reads via loadEngineContext()
 singleton so we're not reparsing files per request.
@@ -274,12 +296,12 @@ KNOWN LIMITS
 ------------
 
 - Runtime bookings and reassignments not durable across restart
-- No promised-weight shortfall report
+- Promised-weight shortfall uses trusted weight today only (no growth projection to delivery)
 - No booked_on price audit
 - Field reports partially parsed (death regex only)
 - Legacy-only goats may lack health coverage
 - Reconciliation detects sheet problems; replacement fixes one booking at a time in memory
-- Feed trace assumes movement log is complete; substitute picker doesn't re-validate feed clearance
+- Feed trace assumes movement log is complete; goats with movement gaps may be under-flagged
 
 Tests: npm test — smoke + listAvailableAnimals contract + concurrent booking invariant.
 npm run check — typecheck + full tests (green on submit).

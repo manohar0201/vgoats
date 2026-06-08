@@ -14,6 +14,7 @@ import type { CanonicalAnimal, EngineContext } from "../types.js";
 import { getReassignmentForBooking } from "../replacement/store.js";
 import { deathSignalsFromFieldReports } from "./fieldDeaths.js";
 import { resolveOfferingRef } from "./resolveRef.js";
+import { checkPromisedWeightShortfalls } from "./weightShortfall.js";
 
 const SEVERITY_RANK: Record<Severity, number> = {
   critical: 0,
@@ -333,6 +334,7 @@ export function reconcileBookingsFromContext(ctx: EngineContext): Discrepancy[] 
     ...bookingIssues,
     ...checkDoubleBookings(assignments),
     ...checkIneligibleBookings(assignments, ctx, registry),
+    ...checkPromisedWeightShortfalls(assignments, ctx, registry),
     ...checkFieldReportDeaths(assignments, ctx, registry),
     ...checkListings(ctx.data.listings, assignments, ctx, registry),
   ];

@@ -234,6 +234,8 @@ export interface BookingListItem {
   notes: string;
   source: "sheet" | "runtime";
   hasSubstitute: boolean;
+  trustedWeightKg: number | null;
+  weightGapKg: number | null;
 }
 
 export interface FeedExposureEvent {

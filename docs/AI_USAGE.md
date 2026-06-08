@@ -1,6 +1,6 @@
 # AI Usage
 
-Used Cursor (Claude) basically the whole time for this take-home. Not gonna pretend I typed every line by hand — that would be lying. But I did make the calls on what to build first, what to skip, and I ran the tests / clicked through the demo until I actually understood the scary parts.
+Used Cursor (Claude) basically the whole time for this take-home. Not gonna pretend I typed every line by hand, that would be lying. But I did make the calls on what to build first, what to skip, and I ran the tests / clicked through the demo until I actually understood every parts.
 
 ---
 
@@ -8,7 +8,6 @@ Used Cursor (Claude) basically the whole time for this take-home. Not gonna pret
 
 - **Cursor** — main thing. Chat + inline edits on the repo.
 - **Claude** (through Cursor) — architecture questions, reading README, explaining data files, writing boilerplate in `src/engine/`.
-- Didn't use Copilot separately or anything else. One tool was enough.
 
 ---
 
@@ -16,11 +15,10 @@ Used Cursor (Claude) basically the whole time for this take-home. Not gonna pret
 
 **Most leverage:**
 
-- Getting oriented on the assignment fast — what "offering" means, why `exchange_listings.csv` isn't a stock exchange, CPT legacy xml vs GoatOS, etc.
+- Getting oriented on the assignment fast — what "offering" means CPT legacy xml vs GoatOS, etc.
 - Scaffolding engine modules — identity union-find, eligibility checks, telemetry spike filtering, reconcile loops, feed exposure trace.
 - Wiring the Express API + demo UI to engine functions.
 - Writing docs (`ASSUMPTIONS.md`, `ARCHITECTURE.txt`, triage note) in a structure that matches the templates.
-- Explaining my own code back to me when I needed to prep for "why does this hold under concurrency" type questions.
 
 **Medium leverage:**
 

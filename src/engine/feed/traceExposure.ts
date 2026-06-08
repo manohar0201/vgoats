@@ -242,3 +242,35 @@ export function traceFeedExposureFromContext(ctx: EngineContext): FeedExposureTr
 export function traceFeedExposure(): FeedExposureTraceResult {
   return traceFeedExposureFromContext(loadEngineContext());
 }
+
+let unclearedExposureSaleBlocks: Map<string, string> | undefined;
+
+function buildUnclearedExposureSaleBlocks(ctx: EngineContext): Map<string, string> {
+  const blocks = new Map<string, string>();
+  for (const record of traceFeedExposureFromContext(ctx).exposures) {
+    if (!record.exposed || record.clearedForDelivery) {
+      continue;
+    }
+    const dates = record.exposureEvents.map((e) => e.logDate).join(", ");
+    blocks.set(
+      record.canonicalId,
+      `Exposed to contaminated feed on ${dates}; not cleared for festival delivery`,
+    );
+  }
+  return blocks;
+}
+
+/** Block reason for inventory/booking when goat was exposed and not vet-cleared before delivery. */
+export function feedExposureSaleBlockReason(
+  canonicalAnimalId: string,
+  ctx: EngineContext,
+): string | null {
+  if (!unclearedExposureSaleBlocks) {
+    unclearedExposureSaleBlocks = buildUnclearedExposureSaleBlocks(ctx);
+  }
+  return unclearedExposureSaleBlocks.get(canonicalAnimalId) ?? null;
+}
+
+export function resetFeedExposureSaleBlockCache(): void {
+  unclearedExposureSaleBlocks = undefined;
+}

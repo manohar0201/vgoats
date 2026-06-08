@@ -1,5 +1,4 @@
 TRIAGE NOTE — Operation Promise Keeper
-Manohar · take-home submission
 
 This is the honest version of what I built, what I cut, and what I'd still lose sleep over.
 
@@ -70,8 +69,18 @@ This is the honest version of what I built, what I cut, and what I'd still lose 
    - getReplacementOffers() split from reconcileBookings() so /api/discrepancies stays fast;
      UI loads offers in parallel.
 
-   - Demo UI: inventory, discrepancies (severity-sorted, feed rows merged with reconcile),
-     goat detail (eligibility, price, history, evidence), booking form, replacement buttons.
+   - Feed-exposed goats not cleared before delivery blocked from inventory/booking
+     (`feedExposureSaleBlockReason` in `saleEligibilityBlockReason`), not only flagged on
+     existing promises.
+
+   - Promised-weight shortfall (weightShortfall.ts) — booked kg vs trusted kg today for
+     resolved confirmed bookings. Gaps under 2 kg ignored; 2–5 kg medium; over 5 kg high.
+     Example: BK-9364 (Haris Malik) booked 52.5 kg, trusted 43 kg → 9.5 kg short, still
+     delivery-eligible but flagged. Also on Bookings tab as trusted/gap column.
+
+   - Demo UI: inventory (breed/price filters, pagination), bookings list, discrepancies
+     (severity filter, pagination), goat detail (eligibility, price, history, evidence),
+     booking form, replacement buttons.
 
 
 5. What I intentionally skipped
@@ -79,16 +88,13 @@ This is the honest version of what I built, what I cut, and what I'd still lose 
    - ingestFieldReports() — general multilingual WhatsApp pipeline. I did regex death signals
      for booked goats where GoatOS still says active (caught 2). Not full NLP.
 
-   - Promised-weight shortfall tracking ("booked at 40kg, goat is 32kg today, might still
-     grow" vs "won't make it"). README says surface as fulfillment risk — not built yet.
+   - Growth projection for weight shortfalls ("might still make promised kg by June 6").
+     Current check is trusted weight as of simulation now only.
 
    - Price mismatch check (quoted price vs rate on booked_on date) in reconciliation.
 
    - Persistent booking / replacement store. Runtime state dies on server restart. Fine for
      demo, documented below.
-
-   - Auto-blocking contaminated goats from inventory listing. Feed exposure is flagged on
-     promised bookings; I didn't add a global "contaminated shed" sale block for unbooked goats.
 
 
 6. What's still unsafe / needs a human
@@ -102,11 +108,11 @@ This is the honest version of what I built, what I cut, and what I'd still lose 
    - Sheet double-books and ineligible bookings are flagged, not silently fixed. Someone still
      has to call customers unless ops clicks Replace.
 
+   - Promised-weight shortfalls (4 at 2 kg+ threshold today) are flagged but not auto-fixed.
+     Customer may still get a delivery-eligible goat that's lighter than the sheet promise.
+
    - 3 feed-exposure bookings have no substitute in pool (BK-6682, BK-9325, BK-9940) — hold
      or manual swap. BK-9325 also has a field-death discrepancy; still one physical problem.
-
-   - Substitute picker does not re-check whether the replacement goat itself had feed exposure.
-     Assumption: ops picks from clean inventory; would tighten in production.
 
    - Restart npm run dev → runtime bookings (BK-RUN-xxxx) and replacements disappear. Sheet
      bookings still block availability.
@@ -114,12 +120,12 @@ This is the honest version of what I built, what I cut, and what I'd still lose 
 
 7. Next 24 hours (if this were production, not the take-home)
 
-   1. Promised-weight fulfillment risk on confirmed bookings
-   2. Price audit on existing bookings vs booked_on rate
-   3. Persist runtime bookings + reassignments (sqlite + unique index on canonical_animal_id)
-   4. Feed exposure as inventory block or eligibility reason, not just discrepancy flag
-   5. ingestFieldReports() for non-death signals (movement, treatment mentions)
+   1. Price audit on existing bookings vs booked_on rate
+   2. Persist runtime bookings + reassignments (sqlite + unique index on canonical_animal_id)
+   3. Weight shortfall growth projection to delivery date (not just today's trusted weight)
+   4. ingestFieldReports() for non-death signals (movement, treatment mentions)
 
-   Current numbers: 200 canonical goats, 132 safely available now, 36 reconcile discrepancies
-   (16 critical / 15 high / 5 medium) plus 6 feed-exposure critical rows in UI (42 total
-   when merged), 15 replacement offers ready.
+   Current numbers: 200 canonical goats, 119 safely available now (feed-exposed-uncleared
+   unbooked goats excluded via sale gate), 40 reconcile discrepancies
+   (16 critical / 19 high / 5 medium) plus 6 feed-exposure critical rows in UI (46 total
+   when merged), 15 replacement offers ready, 58 bookings on sheet (+ runtime session adds).
